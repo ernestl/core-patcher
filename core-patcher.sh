@@ -10,7 +10,7 @@ if [ $UID -ne 0 ]; then
     exit 1
 fi
 
-for arch in i386; do
+for arch in i386 amd64 armhf arm64 ppc64el s390x; do
     core_name=core_"${OLD_VER}"_"${arch}"
     core_unpack_dir=core-"${arch}"
 
@@ -21,6 +21,11 @@ for arch in i386; do
     fi
     # XXX: should we also unpack ubuntu-core-snapd-units?
     dpkg-deb -x ./snapd_${NEW_VER}_${arch}.deb "${core_unpack_dir}"
+    # post-process the deb extraction
+    rm "${core_unpack_dir}"/etc/profile.d/apps-bin-path.sh
+    rm -rf "${core_unpack_dir}"/usr/share/man/
+    gzip -9 -f "${core_unpack_dir}"/usr/share/doc/snapd/copyright
+
     # update manifests
     sed -i "s/snapd=$OLD_VER/snapd=$NEW_VER/" "$core_unpack_dir"/usr/share/snappy/dpkg.yaml
     sed -i "s/ubuntu-core-snapd-units=$OLD_VER/ubuntu-core-snapd-units=$NEW_VER/" "$core_unpack_dir"/usr/share/snappy/dpkg.yaml
@@ -29,7 +34,6 @@ for arch in i386; do
 
     sed -i "s/snapd=$OLD_VER/snapd=$NEW_VER/" "$core_unpack_dir"/snap/manifest.yaml
     grep  "snapd=$NEW_VER" "$core_unpack_dir"/snap/manifest.yaml
-    
     
     # XXX: OLD_VER must be regex friendly, i.e. "+" will break things
     sed -i -E  "s/^(ii\ + snapd .*) ${OLD_VER} (.*)/\1 ${NEW_VER} \2/" "$core_unpack_dir"/usr/share/snappy/dpkg.list
@@ -46,7 +50,7 @@ for arch in i386; do
         exit 1
     fi
     
-    (cd "$core_unpack_dir" ; snap pack)
+    (cd "$core_unpack_dir" ; snap pack --filename="../core_${NEW_VER}_${arch}".snap)
 
 done
             
