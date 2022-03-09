@@ -3,7 +3,9 @@
 # core patches, add a snapd deb to the core snap and adjust things
 # so that it's exactly as if it was done via a full snap ubild
 #
-# Needs the updated debs for all arches in the same dir
+# To use it, one needs the to download the updated debs from
+# Launchpad or a private PPA for all the supported architectures
+# in the same directory that the tool run from.
 
 set -e
 
