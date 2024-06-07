@@ -9,22 +9,27 @@
 
 set -e
 
-OLD_VER=2.54.2
-NEW_VER=2.54.3
+# update OLD_VER to the version of core snap to use and NEW_VER to
+# the version of core snap to create after injecting the corresponding
+# snapd deb content
+OLD_VER=2.61.2
+NEW_VER=2.61.4
 
 if [ "$UID" -ne 0 ]; then
     echo "script must run as root"
     exit 1
 fi
-
-for arch in i386 amd64 armhf arm64 ppc64el s390x; do
-    echo "patching $arch"
+# options: i386 amd64 armhf arm64 ppc64el s390x
+# support for i386 was dropped on version 2.60.4 (rev 16203)
+for arch in amd64 armhf arm64 ppc64el s390x; do
+    echo "Patching $arch"
 
     core_name=core_"${OLD_VER}"_"${arch}"
     core_unpack_dir=core-"${arch}"
 
     # update core with deb
-    UBUNTU_STORE_ARCH="$arch" snap download --basename="${core_name}" --stable core
+    echo "[1] Downloading and unpacking $core_name"
+    UBUNTU_STORE_ARCH="$arch" snap download --basename="${core_name}" --stable core &>/dev/null
     if [ ! -d "$core_unpack_dir" ]; then
         unsquashfs -d "$core_unpack_dir" "${core_name}".snap
     fi
@@ -40,6 +45,7 @@ for arch in i386 amd64 armhf arm64 ppc64el s390x; do
     cp -a "${core_unpack_dir}"/usr/lib/snapd/snap-device-helper "${core_unpack_dir}"/lib/udev/snappy-app-dev
 
     # update manifests
+    echo "[2] Updating manifests"
     sed -i "s/snapd=$OLD_VER/snapd=$NEW_VER/" "$core_unpack_dir"/usr/share/snappy/dpkg.yaml
     sed -i "s/ubuntu-core-snapd-units=$OLD_VER/ubuntu-core-snapd-units=$NEW_VER/" "$core_unpack_dir"/usr/share/snappy/dpkg.yaml
     grep -q  "snapd=$NEW_VER" "$core_unpack_dir"/usr/share/snappy/dpkg.yaml
@@ -55,23 +61,34 @@ for arch in i386 amd64 armhf arm64 ppc64el s390x; do
     grep -q -E "^ii\ +ubuntu-core-snapd-units\ + $NEW_VER " "$core_unpack_dir"/usr/share/snappy/dpkg.list
 
     # replace meta/snap.yaml version
-    sed -i s/"$OLD_VER"/"$NEW_VER"/ "$core_unpack_dir"/meta/snap.yaml
+    echo "[3] Updating meta/snap.yaml version"
+    # agreed on naming convention core_2.61.X-<date:yyyymmdd>_<arch>
+    today=$(date +%Y%m%d)
+    sed -i s/"$OLD_VER"/"$NEW_VER-$today"/ "$core_unpack_dir"/meta/snap.yaml
 
     # ensure no old version is left
-    if grep -r $(echo "$OLD_VER" | sed 's/\./\\./g') "$core_unpack_dir"; then
+    echo "[4] Checking if the old snapd version is anywhere in the files"
+    if grep -r "${OLD_VER//./\\.}" "$core_unpack_dir"; then
         echo "found old version"
         exit 1
     fi
-    
-    (cd "$core_unpack_dir" ; snap pack --filename="../core_${NEW_VER}_${arch}".snap)
+
+    # Allow user to run script to remove unwated files e.g. translation files under /usr/share/locale/xx/
+    echo "[5] Manually remove the unwanted translation files in $core_unpack_dir, press any key to continue..."
+    read -r
+
+    echo "[6] Re-packing core snap"
+    snapname_new="core_${NEW_VER}-${today}_${arch}.snap"
+    (cd "$core_unpack_dir" ; snap pack --filename="../$snapname_new")
+    echo "Created new core snap: $snapname_new"
 
     # test if filelist/permissions/link targets are identical
+    echo "[7] Checking for unwanted diffs"
     if ! diff -u \
          <(unsquashfs -n -ll "core_${OLD_VER}_${arch}.snap"|awk '{print $1" "$2" "$6" "$7" "$8}') \
-         <(unsquashfs -n -ll "core_${NEW_VER}_${arch}.snap"|awk '{print $1" "$2" "$6" "$7" "$8}'); then
+         <(unsquashfs -n -ll "$snapname_new"|awk '{print $1" "$2" "$6" "$7" "$8}'); then
         echo "ERROR unexpected diff"
         exit 1
     fi
-
 done
             
