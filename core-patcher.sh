@@ -73,21 +73,37 @@ for arch in amd64 armhf arm64 ppc64el s390x; do
         exit 1
     fi
 
-    # Allow user to run script to remove unwated files e.g. translation files under /usr/share/locale/xx/
-    echo "[5] Manually remove the unwanted translation files in $core_unpack_dir, press any key to continue..."
-    read -r
+    echo "[5] Checking for unwanted file differences for manual correction"
+    snapname_new="core_${NEW_VER}-${today}_${arch}_candidate.snap"
+    (cd "$core_unpack_dir" ; snap pack --filename="../$snapname_new")
+    echo "Created new core snap: $snapname_new"
 
-    echo "[6] Re-packing core snap"
+    if ! diff -u > diff.txt \
+        <(unsquashfs -n -ll "core_${OLD_VER}_${arch}.snap"|awk '{print $1" "$2" "$6" "$7" "$8}') \
+	<(unsquashfs -n -ll "$snapname_new"|awk '{print $1" "$2" "$6" "$7" "$8}'); then
+        echo "File differences detected, see diff.txt. Make manual corrections in $core_unpack_dir and press any key to continue..."
+    	awk 'BEGIN {print "<!DOCTYPE html>\n<html>\n<head><title>File</title></head>\n<body><pre>"} {print} END {print "</pre></body>\n</html>"}' diff.txt > diff.html
+	sudo -u "$(logname)" bash -c "xdg-open diff.html"
+        read -r
+    else
+	echo "No differences found"
+    fi
+    rm -f "core_${NEW_VER}-${today}_${arch}_candidate.snap" 
+
+    echo "[7] Re-packing core snap"
     snapname_new="core_${NEW_VER}-${today}_${arch}.snap"
     (cd "$core_unpack_dir" ; snap pack --filename="../$snapname_new")
     echo "Created new core snap: $snapname_new"
 
     # test if filelist/permissions/link targets are identical
-    echo "[7] Checking for unwanted diffs"
+    echo "[8] Checking for unwanted diffs"
     if ! diff -u \
-         <(unsquashfs -n -ll "core_${OLD_VER}_${arch}.snap"|awk '{print $1" "$2" "$6" "$7" "$8}') \
-         <(unsquashfs -n -ll "$snapname_new"|awk '{print $1" "$2" "$6" "$7" "$8}'); then
-        echo "ERROR unexpected diff"
+        <(unsquashfs -n -ll "core_${OLD_VER}_${arch}.snap"|awk '{print $1" "$2" "$6" "$7" "$8}') \
+        <(unsquashfs -n -ll "$snapname_new"|awk '{print $1" "$2" "$6" "$7" "$8}'); then
+        echo "Error: file differences found, see diff.txt, press any key to abort..."
+        awk 'BEGIN {print "<!DOCTYPE html>\n<html>\n<head><title>File</title></head>\n<body><pre>"} {print} END {print "</pre></body>\n</html>"}' diff.txt > diff.html
+        sudo -u "$(logname)" bash -c "xdg-open diff.html"
+	read -r
         exit 1
     fi
 done
